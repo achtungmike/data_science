@@ -1,0 +1,213 @@
+---
+title: "BMIN 7054 Homework 3"
+author: "Mike Lape"
+date: "February 22, 2018"
+output:
+  pdf_document: default
+---
+&nbsp;
+
+```{r, get_dat, warning=FALSE, message=FALSE}
+# Set seed so I can get the same results from CV each time, so I can reference
+# numbers accurately in my answer to question 12.
+set.seed(1)
+library(caret)
+library(Hmisc)
+library(mlbench)
+data(BreastCancer)
+
+# We have 16 rows with NA's for Bare.nuceli so we impute using median.
+dat <- BreastCancer
+dat$Bare.nuclei <- impute(dat$Bare.nuclei, fun = median)
+
+# I'm going to change all columns from factor to numeric, except for
+# the class column as this is a true catergorical/binary variable and thus
+# should stay a factor.
+for(i in 2:10) 
+{
+  dat[, i] <- as.numeric(as.character(dat[, i]))
+}
+
+
+```
+
+1.	Write down the dimensions of the data.
+```{r, fig.width=8, fig.height=8}
+dim(dat)
+# The data has 699 rows/observations and 11 columns/variables. 
+```
+
+&nbsp;
+
+2.   Show the top 6 rows.
+```{r, fig.width=8, fig.height=8}
+head(dat)
+```
+
+&nbsp;
+
+3. Describe the data.  
+Id:                 Sample code number              [Numerical]     
+Cl.thickness:       Clump Thickness                 [Numerical]  
+Cell.size:          Uniformity of Cell Size         [Numerical]  
+Cell.shape:         Uniformity of Cell Shape        [Numerical]  
+Marg.adhesion:      Marginal Adhesion               [Numerical]  
+Epith.c.size:       Single Epithelial Cell Size     [Numerical]  
+Bare.nuclei:        Bare Nuclei                     [Numerical]  
+Bl.cromatin:        Bland Chromatin                 [Numerical]  
+Normal.nucleoli:    Normal Nucleoli                 [Numerical]  
+Mitoses:            Mitoses                         [Numerical]  
+Class:              Class (benign or malignant)     [Categorical - Binary]  
+
+&nbsp;
+
+
+4.  Show the summary statistics.
+```{r, fig.width=8, fig.height=8}
+
+summary(dat)
+
+```
+
+&nbsp;
+
+5.  Postulate a logistic regression model.
+
+The ID will not be considered in the regression model as it is just an
+identifier given to samples as they come into the office.  
+
+Z = alpha1 + beta1 * Cl.thickness + beta2 * Cell.size + beta3 * Cell.shape + 
+             beta4 * Marg.adhesion + beta5 * Epith.c.size + 
+             beta6 * Bare.nuclei + beta7 * Bl.cromatin + 
+             beta8 * Normal.nucleoli + beta9 * Mitoses
+
+
+Pr(Class = Malignant) = e^(Z) / ( 1 + e^(Z))
+
+
+
+&nbsp;
+
+6.  Fit the model.
+```{r}
+
+mod <- glm(Class ~. - Id, data = dat , family = binomial)
+summary(mod)
+
+```
+Z = -9.71 +  0.53 * Cl.thickness + 0.01  * Cell.size + 0.32 * Cell.shape + 
+             0.24 * Marg.adhesion + 0.06 * Epith.c.size + 
+             0.43 * Bare.nuclei + 0.41 * Bl.cromatin + 
+             0.16 * Normal.nucleoli + 0.54 * Mitoses
+
+
+Pr(Class = Malignant) = e^(Z) / ( 1 + e^(Z))
+
+&nbsp;
+
+7.  Comment on the coefficients.
+```{r, fig.width=8, fig.height=8}
+# The following coefficients are calculated to be significant:
+# Coef            Value           P-Val
+# Intercept        -9.71          < 2e-16
+# Cl.thickness      0.53            7.38e-05
+# Marg.adhesion     0.24            0.04176 
+# Bare.nuclei       0.43            2.24e-06
+# Bl.cromatin       0.41            0.00864
+
+```
+
+&nbsp;
+
+
+8.  Check goodness-of-fit.
+```{r, fig.width=8, fig.height=8}
+# To calculate the goodness of fit we need the residual deviance and degrees
+# of freedom, and GLM provides these.
+# Residual deviance (output by glm): 113.09
+# Degrees of Freedom (output by glm): 689
+
+# Calculate p-val for fit, pchisq(residual dev, deg of free, lower.tail = F)
+pval <- pchisq(113.09, 689, lower.tail = FALSE)
+pval
+# The calculated p-value is 1, meaning this model is an excellent fit!
+
+```
+
+&nbsp;
+
+
+9.  Generate the confusion matrix.
+```{r, fig.width=8, fig.height=8}
+# To generate confusion matrix we need to predict some data, so let's 
+# predict the training data.
+
+# Running the training data through the model to get some predictions
+pred <- predict.glm(mod, type = "response" )
+pred_class <- ifelse(pred >= 0.5, "malignant", "benign")
+
+conf <- table(dat$Class, pred_class)
+rownames(conf) = c("Obs benign", "Obs malignant")
+colnames(conf) = c("Pred benign", "Pred malignant")
+conf
+
+```
+
+&nbsp;
+
+10.  Calculate the misclassification rate.
+```{r, fig.width=8, fig.height=8}
+
+miss <- ((conf[2] + conf[3]) / nrow(dat)) * 100
+
+paste("The misclassification rate is: ", round(miss, 3), "%")
+
+# This model has a really good misclassification rate.
+# Collecting results for table
+collect = matrix(nrow = 3, ncol = 2)
+colnames(collect) <- c('Method', 'Accuracy (%)')
+collect[1,] <- c('No CrossValidation', round(100 - miss,3))
+```
+
+&nbsp;
+
+11.  Check model accuracy using 10-fold CV as well as LOOCV.
+```{r, fig.width=8, fig.height=8}
+# Let's first do 10-fold CV
+cv <- trainControl(method = "repeatedcv", number = 10, savePredictions = TRUE)
+cv_mod <- train(Class ~. -Id, data = dat, method = "glm", family = "binomial",
+                trControl = cv, tuneLength = 5)
+
+paste("10-fold CV accuracy: ", round(cv_mod$results$Accuracy * 100, 3), "%")
+collect[2,] <- c('10-fold CV', round(cv_mod$results$Accuracy * 100,3))
+
+# Now let's do LOOCV
+loo <- trainControl(method = "LOOCV")
+loo_mod <- train(Class ~. -Id, data = dat, method = "glm", family = "binomial", 
+                 trControl = loo)
+
+
+paste("LOOCV accuracy: ", round(loo_mod$results$Accuracy * 100, 3), "%")
+collect[3,] <- c('LOOCV', round(loo_mod$results$Accuracy * 100,3))
+```
+
+&nbsp;
+
+12.  Comment on what was done for question 11.  
+Cross validation (cv) is a good way to validate a model or decide between multiple
+models, in this case cv was used for the former.  The logistic regression model 
+originally was built using all 699 observations and then tested using the same
+699 observations.  This normally can lead to an aritificially inflated accuracy 
+(1 - missclassification) because the model has been trained on the same data
+it is being tested on.  In this case the logistic regresison model has an 
+accuracy of 96.996%.  The model was then validated using 10-fold cross-validation 
+and leave one out cross-validation (LOOCV).  10-fold cross-validation gave an
+accuracy of 96.561% and LOOCV gave an accuracy of 96.567%.  Considering that both
+of these accuracy values are so close to each other as well as being very close
+to the accuracy of the earlier obtained 96.996% indicates that not only is this 
+model very accurate but it is also very robust.
+
+```{r results= 'asis'}
+library(knitr)
+kable(collect, caption = 'Accuracy Results')
+```

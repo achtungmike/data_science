@@ -1,0 +1,212 @@
+---
+title: "BMIN 7054 Homework 5"
+author: "Mike Lape"
+date: "March 8, 2018"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r, get_dat, warning=FALSE, message=FALSE}
+library(pROC)
+data(aSAH)
+dat <- aSAH
+```
+
+&nbsp;
+
+
+1.	Write a short note on the protein biomarker ndka from internet sources (Max 5 sentences).  
+&nbsp;
+NDKA better known as NME1, nucleoside diphosphate kinase A, is an enzyme
+encoded by the NME1 gene.  It is found in most tissues and is repsonsible 
+for moving the terminal phosphate amongst various nucleoside diphosphates.
+It is also believed to be involved in the "ischemic cascade after stroke".  It
+is considered an early biomarker for a stroke.  It has also been looked at 
+as a biomarker for color rectal cancer.
+
+* https://en.wikipedia.org/wiki/NME1  
+* Otero-estévez O, De chiara L, Barcia-castro L, et al. Evaluation of serum nucleoside diphosphate kinase A for the detection of colorectal cancer. Sci Rep. 2016;6:26703.  
+* Han X, Gao Y, Ma B, et al. The Clinical Relevance of Serum NDKA, NMDA, PARK7, and UFDP Levels with Phlegm-Heat Syndrome and Treatment Efficacy Evaluation of Traditional Chinese Medicine in Acute Ischemic Stroke. Evid Based Complement Alternat Med. 2015;2015:270498.  
+
+
+&nbsp;
+
+2.   Fit logistic regression model with response var 'outcome' and predictors
+s100b, log(ndka), gender, and age.  Identify significant predictors.  Identify
+the most significant predictor.  Check goodness-of-fit of the model.  Write the
+prediction algorith.  
+```{r, fig.width=8, fig.height=8}
+# log transform ndka
+dat$log_nkda <- log(dat$ndka)
+
+# Create the model
+mod <- glm(outcome ~ s100b + log_nkda + gender + age, family = binomial, data = dat)
+
+# Examine model
+summary(mod)
+
+# The following coefficients are calculated to be significant:
+# Coef            Value           P-Val
+# Intercept        -5.45          0.0004
+# s100b             5.28          7.94e-05
+# log_nkda          0.93          0.0197 
+# genderFemale     -1.17          0.0235
+# age               0.04          0.0477
+
+# All predictors are significant but the most significant are s100b
+# and log_ndka.  Leaving out the intercept.
+
+# Goodness of fit:
+# Residual deviance (output by glm): 110.34
+# Degrees of Freedom (output by glm): 108
+
+# Calculate p-val for fit, pchisq(residual dev, deg of free, lower.tail = F)
+pval <- pchisq(110.34, 108, lower.tail = FALSE)
+pval
+# The calculated p-value is 0.42, meaning this model is a good fit.
+
+```
+
+Z = -5.45 + 5.28 * s100b + 0.93 * log_nkda - 1.17 * genderFemale + 
+             0.04 * age 
+
+
+Pr(Poor Outcome) = e^(Z) / ( 1 + e^(Z))
+
+Pr(Good Outcome) = 1 / (1 + e^(Z))
+
+&nbsp;
+
+3. Obtain the confusion matrix of the model in question 2.  Find the accuracy
+of the prediction model.  
+```{r, fig.width=8, fig.height=8}
+# To generate confusion matrix we need to predict some data, so let's 
+# predict the training data.
+
+# Running the training data through the model to get some predictions
+pred <- predict.glm(mod, newdata = dat, type = "response" )
+pred_class <- ifelse(pred >= 0.5, "Poor", "Good")
+
+conf <- table(dat$outcome, pred_class)
+rownames(conf) = c("Obs Good", "Obs Poor")
+colnames(conf) = c("Pred Good", "Pred Poor")
+conf
+
+miss <- ((conf[2] + conf[3]) / nrow(dat)) * 100
+
+paste("The misclassification rate is: ", round(miss, 2), "%")
+paste("The accuracy is: ", round((100 - miss) , 2), "%")
+```
+&nbsp;
+
+
+4.  Write formally the link function of the model, which we will use as
+biomarker.  
+
+Biomarker_X = Link Function = -5.46 + 5.28 * s100b + 0.93 * log_nkda 
+                                - 1.17 * genderFemale + 0.04 * age
+
+&nbsp;
+
+5.  Get the non-parametric density curves of biomarker X for each outcome
+(Good, Poor), and comment on the densities.  
+```{r, fig.width=8, fig.height=8}
+# Generate the biomarker X values
+link <- predict.glm(mod, newdata = dat, type = "link" )
+
+# Subset dat based on outcome.
+good <- subset(link, dat$outcome == "Good")
+poor <- subset(link, dat$outcome == "Poor")
+
+# Now plot the density curves.
+dens_good <- density(good)
+dens_poor <- density(poor)
+
+# Good density curve
+plot(dens_good, col = "orange", lwd = 4, xlim = c(-4, 13), 
+     xlab = "Biomarker X", ylab = "Density", 
+     main = "Non-parametric Density Curves" )
+
+# Poor density curve
+lines(dens_poor, col = "blue", lwd = 4)
+
+# Add ticks for data according to outcomes
+rug(good, side = 1, col = "orange")
+rug(poor, side = 3, col = "blue")
+
+legend("topright", legend = c("Good", "Poor"), pch = c(16,16), 
+       col = c("orange", "blue"))
+
+# The density plot for our biomarker X values looks pretty good.  Poor outcomes
+# tend to have larger values for biomarker X whereas good outcomes tend to
+# have smaller (more negative) biomarker X values.  Also, while there is some overlap
+# of poor and good outcomes in the range of -1 to 0 for biomarker X values, the good outcomes
+# in this region far outnumber the poor outcomes.
+
+```
+
+&nbsp;
+
+
+6.  Outline how a diagnostic test would look for biomarker X.   
+Test is positive for 'poor' prognosis if biomarker_X >= cutoff.    
+Test is negative for 'good' prognosis if biomarker_X < cutoff.  
+
+We need to generate our ROC curve to get the optimal value of cutoff which
+we will do below.
+
+
+
+
+&nbsp;
+
+7.  Invoke the 'roc' function with link function X as a biomarker.  Plot the ROC
+curve.  
+```{r, fig.width=8, fig.height=8}
+df <- data.frame(link = c(good, poor), outcome = rep(c("Good","Poor"), c(72,41)))
+
+# Poor = 1
+# Good = 0 
+# so direction is <
+my_roc <- roc(df$outcome, df$link, levels = c("Good", "Poor"), direction = "<")
+
+# Stuff the sensitivity and specificities into a dataframe
+roc_out <- data.frame(sens = my_roc$sensitivities, 
+                      spec = my_roc$specificities, cuts = my_roc$thresholds)
+plot.roc(my_roc)
+```
+
+&nbsp;
+
+
+8.  Find the 95% confidence interval for AUC.  Comment on the utility of 
+biomarker X.
+```{r}
+
+ci <- ci.auc(my_roc)
+paste(round(ci[1], 3), '<=', round(ci[2], 3), "<=", round(ci[3], 3))
+# The null hypothesis that AUC = 0.5 is well outside the lower bound
+# of the 95% confidence interval, indicating that this model is significantly 
+# better than 50-50 chance.  Therefore biomarker X is useful and gives 
+# decent sensitivity and specificity and would make a good diagnostic test.
+```
+
+9. Develop a diagnostic test based on biomarker X.
+```{r}
+# To develop a diagnostic test we need to decide on the best cutoff.
+roc_out$dist <- (roc_out$sens -1)^2 + (roc_out$spec - 1)^2 
+
+# Our best cutoff is the one wiht the minimal square distance.
+roc_out[which(roc_out$dist == min(roc_out$dist)),]
+```
+Test is positive for 'poor' prognosis if biomarker_X >= -0.889.      
+Test is negative for 'good' prognosis if biomarker_X < -0.889.   
+
+10. Compare the biomarkes s100b and X.  
+To compare two different biomarkers for which we have ROC curves, we  
+simply need to compare the AUC for each.  The one with the larger AUC is 
+the better performing biomarker.  In this case the AUC for biomarker X is 0.824 
+and the AUC for s100b (as obtained from Dr. Rao's handout) is 0.74.  Thus
+biomarker X is the better biomarker.

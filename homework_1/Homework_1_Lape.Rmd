@@ -1,0 +1,173 @@
+---
+title: "BMIN 7054 Homework 1"
+author: "Mike Lape"
+date: "January 27, 2018"
+output:
+  word_document: default
+---
+&nbsp;
+
+1.	What is the size of the data set and show first 6 rows.
+```{r, fig.width=8, fig.height=8}
+
+# Load in birthwt data
+data("birthwt", package = 'MASS')
+
+# The birthwt dataframe has 10 columns/variables, and 189 rows/observations.
+dim(birthwt)
+
+
+# The top 6 rows are as follows:
+head(birthwt)
+
+```
+
+&nbsp;
+
+2. Describe the data
+```{r, fig.width=8, fig.height=8, eval=FALSE}
+# Use the help page on this dataset to determine what each variable describes.
+help(birthwt, package = MASS)
+```
+Low: Indicator of birth weight < 2.5 kg [Categorical - binary]  
+age: Age of mother in years [Numerical]  
+lwt: Mother's weight in pounds at last menstrual period [Numerical]  
+race: Mother's race, 1 = white, 2 = black, 3 = other [Categorical]  
+smoke: Smoking status during pregnancy [Categorical - binary]  
+ptl: Number of previous premature labors [Numerical]  
+ht: history of hypertension [Categorical - binary]  
+ui: Presence of uterine irritability [Categorical - binary]  
+ftv: Number of physician visits during 1st trimester [Numerical]  
+bwt: Birth weight in grams [Numerical]  
+
+&nbsp;
+
+3. Determine datatype or class of each variable.
+```{r, fig.width=8, fig.height=8}
+# Remove bwt column.
+birthwt1 <- birthwt[,-10]
+
+# Generate list of types of each variable
+sapply(birthwt1, class)
+
+# Some of these variables are listed as integer but should changed to factors.
+
+```
+
+&nbsp;
+
+
+4. Change race to factor and count number of each
+```{r, fig.width=8, fig.height=8}
+
+# Change race to factor.
+birthwt1$race <- factor(birthwt1$race, labels=c("_White","_Black","_Other"))
+
+# Display totals of each race in table
+# 96 White, 26 Black, 67 Other
+table(birthwt1$race)
+
+```
+
+&nbsp;
+
+
+5. Postulate logistic regression with low as response variable.
+```{r, fig.width=8, fig.height=8}
+
+# Clean up the rest of the data first. 
+birthwt1$low   <- factor(birthwt1$low, labels = c("Normal", "Low"))
+birthwt1$smoke <- factor(birthwt1$smoke, labels = c("_No", "_Yes"))
+birthwt1$ht    <- factor(birthwt1$ht, labels = c("_No", "_Yes"))
+birthwt1$ui    <- factor(birthwt1$ui, labels = c("_No", "_Yes"))
+
+# Postulate the model:
+mod <- glm(low ~ ., data = birthwt1, family = binomial)
+summary(mod)
+
+
+```
+
+&nbsp;
+
+
+
+6. Fit the model to the data, write the prediction equation.  
+Model was fitted in question 5 above.  The prediction equation can be found below.  
+
+&nbsp;
+Z = 0.4806 - 0.0295 * age - 0.0154 * lwt + 1.272 * race_Black + 0.880 * race_Other + 0.939 * smoke_Yes + 0.543 * ptl + 1.863 * ht_Yes + 0.768 ui_Yes + 0.065 * ftv
+
+Pr(low birth weight) = e^(Z) / ( 1 + e^(Z))
+
+&nbsp;
+
+7. Identify the significant predictions, and interpret the coefficient for race  
+
+The significant predictors, those with a p-val < 0.05 are  
+lwt        (P-val = 0.02580)  
+race_black (P-val = 0.01584)  
+race_other (P-val = 0.04576)  
+smoke_Yes  (P-val = 0.01957)  
+ht_Yes     (P-val = 0.00756)  
+
+The factor race is shown to have a significant impact on the prediction for low birth weight.
+In this model race_white is held as the reference and p-values as well as coefficients are 
+calculated for both race_black (p-val = 0.01584, coeff = 1.272 ) and race_other (p-val = 0.04576, 
+coeff = 0.881).  The positive coefficients indicate that mothers of race black or other
+have increased likelihood of giving birth to an underweight baby as compared to white mothers.
+
+
+&nbsp;
+
+8. Interpret the coefficients.   
+
+The insignificant (by p-val) coefficients, age, ptl, ui, and ftv have the following coefficients, -0.0295, 0.543, 0.768, and 0.065.  Age has a slightly negative coefficient indicating that as a mother ages the chances of a low birth weight are less.  On the other hand, ptl and ui have positive coefficients, indicating that the more previous premature labors (ptl) or the presence of a uterine infection (ui) increase the odds of having a baby of low birth weight.  Finally, the more a mother goes to the doctor during the first trimester (ftv) actually increases the chances of a low birth weight child.
+The rest of the coefficients are considered significant by the p-val.  As stated in question 7, the coefficients of race_black and race_other indicate that falling into either category increases the likelihood of a low weight birth.  The weight of the mother at the last menstrual period (lwt) has a barely negative coefficient (-0.015) indicating that as the mother's weight increases the chance of a low weight birth decreases.  On the other hand both smoke and ht have positive coefficients, 
+0.939 and 1.863 respectively, indicating that both smoking and having hypertension increase
+the odds of a low birth weight.
+
+
+&nbsp;
+
+9. Lay out the odds ratios along with their 95% confidence intervals. 
+```{r, fig.width=8, fig.height=8}
+# The odds ratios:
+exp(mod$coefficients)
+
+# The 95% CI:
+exp(confint(mod))
+```
+
+&nbsp;
+
+10. Work out the confusion matrix. Determine the misclassification rate. 
+```{r, fig.width=8, fig.height=8, warning = FALSE, message = FALSE}
+# Running the training data through the model to get some predictions
+pred <- predict.glm(mod, type = "response" )
+
+# Classify the prediction, and build confusion matrix. 
+pred_class <- ifelse(pred >= 0.5, 1,0)
+conf <- table(birthwt1$low, pred_class)
+rownames(conf) = c('Obs_Normal', 'Obs_Low')
+colnames(conf) = c('Pred_Normal', 'Pred_Low')
+conf  
+
+# Calculate misclassification rate using confusion matrix.
+miss <- round(((conf[2] + conf[3]) / (conf[1] + conf[2] + conf[3] + conf[4])) * 100,2)
+
+
+cat("The misclassification rate is: ", miss, "%")
+```
+
+&nbsp;
+
+11. Summarize your findings in a few lines.   
+The misclassification rate of this logistic regression model is 25.93% indicating that more than 
+1 in every 4 prediction on average would be misclassified.  The test set used for the determination
+of this misclassification rate is the same as the training set for the model, so with 
+real test data the model would likely have a higher misclassification rate.
+
+The model did output some important predictions, including that if you are black or other race when compared to white mother's you have an increased likelihood of a low birth weight.  Another important indicator is that if the mother has hypertension a low weight birth is 86.6% more likely.  This model seems to reinforce two pieces of advice often given to expecting mothers, namely do not smoke, and work to lower the blood pressure (hypertension).
+
+&nbsp;

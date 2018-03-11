@@ -1,0 +1,485 @@
+---
+title: "BMIN 7054 Homework 2"
+author: "Mike Lape"
+date: "February 15, 2018"
+output:
+  pdf_document: default
+  word_document: default
+---
+&nbsp;
+
+```{r, get_dat, warning=FALSE, message=FALSE}
+library(foreign)
+library(nnet)
+library(MASS)
+dat <- read.dta("https://stats.idre.ucla.edu/stat/data/ologit.dta")
+```
+
+1.	Write down the dimensions of the data.
+```{r, fig.width=8, fig.height=8}
+dim(dat)
+# The data has 400 rows/observations and 4 columns/variables
+```
+
+&nbsp;
+
+2.   Show the top 6 rows.
+```{r, fig.width=8, fig.height=8}
+head(dat)
+```
+
+&nbsp;
+
+3.  Show the summary statistics.
+```{r, fig.width=8, fig.height=8}
+# The initial summary stats for pared and public don't make sense.
+# The data needs to be reformatted, pared and public need to be changed
+# to factors.
+
+dat$pared <- as.factor(dat$pared)
+dat$public <- as.factor(dat$public)
+summary(dat)
+
+```
+
+&nbsp;
+
+4.  Postulate the multinomial logistic regression model.
+The probability equations should look like the following:
+
+D = 1 + e^(alpha1 + (beta1 * pared) + (beta2 * public) + (beta3 * gpa) 
+    + e^(alpha2 + (gamma1 * pared) + (gamma2 * public) + (gamma3 * gpa))
+
+Pr(Apply = "somewhat likely") = e^(alpha1 + (beta1 * pared) + (beta2 * public) + (beta3 * gpa) / D
+
+Pr(Apply = "very likely") = e^(alpha2 + (gamma1 * pared) + (gamma2 * public) + (gamma3 * gpa) / D
+
+Pr(Apply = "unlikely") = 1/D
+
+&nbsp;
+
+5.  Fit the model.
+```{r}
+mod <- multinom(apply ~., data = dat)
+summary(mod)
+```
+The model was fit above.  The equations can be found below.
+
+D = 1 + e^(-1.88 + 0.95 * pared - 0.42 * public + 0.45 * gpa) 
+    + e^(-4.85 + 1.37 * pared + 0.36 * public + 0.92 * gpa)
+
+Pr(Apply = "somewhat likely") = e^(-1.88 + 0.95 * pared - 0.42 * public + 0.45 * gpa) / D
+
+Pr(Apply = "very likely") = e^(-4.85 + 1.37 * pared + 0.36 * public + 0.92 * gpa) / D
+
+Pr(Apply = "unlikely") = 1/D
+
+&nbsp;
+
+6.  Comment on the coefficients.
+```{r, fig.width=8, fig.height=8}
+# We can calculate p-vals for each estimate to determine which are significant.
+# |estimate / std err| > 1.96  == significant 
+
+# somewhat likely
+# coeffs:  -1.878955 0.9516492 -0.4188168 0.4487486
+# std err: 0.863786 0.3170625 0.3432944 0.2902058
+int_sl    <- abs(-1.878955  / 0.863786) > 1.96
+pared_sl  <-  abs(0.9516492 / 0.3170625) > 1.96
+public_sl <- abs(-0.4188168 / 0.3432944) > 1.96
+gpa_sl    <-  abs(0.4487486 / 0.2902058) > 1.96
+
+
+# very likely 
+# coeffs: -4.847763 1.3741555  0.3600661 0.9240376
+# std err: 1.449023 0.4221675 0.4434658 0.4741715
+int_vl <- abs(-4.847763 / 1.449023) > 1.96
+pared_vl <- abs(1.3741555 / 0.4221675) > 1.96
+public_vl <-  abs(0.3600661 / 0.4434658) > 1.96
+gpa_vl <- abs(0.9240376 / 0.4741715) > 1.96
+
+int_sl
+pared_sl
+public_sl
+gpa_sl
+
+int_vl
+pared_vl
+public_vl
+gpa_vl
+
+# The following coefficients have been found to be significant:
+# Somewhat Likely:
+#   - Intercept
+#   - Pared
+# Very Likely:
+#   - Intercept
+#   - Pared
+
+# So it appears that the only coefficients that are significant are the
+# the intercept and the coefficent for pared representing whether at least
+# one parent has a graduate degree.
+
+```
+
+&nbsp;
+
+
+7.  Check goodness-of-fit.
+```{r, fig.width=8, fig.height=8}
+# To calculate the goodness of fit we need the residual deviance and degrees
+# of freedom.
+# Residual deviance (output by multinom): 713.994 
+# 400 students, 3 choices but 1 choice will be obtained by subtraction
+# We use 8 parameters to fit this model, so Degrees of freedom can be 
+# calculated as shown below.
+dof <- 400 * 2 - 8
+
+# Calculate p-val for fit, pchisq(residual dev, deg of free, lower.tail = F)
+pval <- pchisq(713.994, dof, lower.tail = FALSE)
+pval
+# The calculated p-value is 0.978, meaning this model is an excellent fit!
+
+```
+
+&nbsp;
+
+8.  Present the model graphically.
+```{r, fig.width=8, fig.height=8}
+# 4 separate graphs, 1 for each combo of pared and public
+# GPA will run along x-axis
+
+# Pared = 0, Public = 0
+# Somewhat likely:
+curve(exp(-1.88 + 0.95 * 0 - 0.42 * 0 + 0.45 * x) / 
+        (1 + exp(-1.88 + 0.95 * 0 - 0.42 * 0 + 0.45 * x) + 
+           exp(-4.85 + 1.37 * 0 + 0.36 * 0 + 0.92 * x)),
+      ylim = c(0,1), xlim = c(1,4), xlab = "GPA", ylab = "Probability",
+      main = "Multinomial LogReg Model, Pared = 0, Public = 0", col = "blue", lwd = 3)
+
+# Very Likely
+curve(exp(-4.85 + 1.37 * 0 + 0.36 * 0 + 0.92 * x) / 
+        (1 + exp(-1.88 + 0.95 * 0 - 0.42 * 0 + 0.45 * x) + 
+           exp(-4.85 + 1.37 * 0 + 0.36 * 0 + 0.92 * x)), col = "red", lwd = 3,
+      add = TRUE)
+
+# Unlikely
+curve(1/(1 + exp(-1.88 + 0.95 * 0 - 0.42 * 0 + 0.45 * x) + 
+           exp(-4.85 + 1.37 * 0 + 0.36 * 0 + 0.92 * x)), col = "green", lwd = 3,
+      add = TRUE)
+
+legend("topleft", legend = c("Somewhat Likely", "Very Likely", "Unlikely"),
+       pch = c(16,16,16), col = c("blue", "red", "green"))
+
+
+# Pared = 1, Public = 0
+# Somewhat likely:
+curve(exp(-1.88 + 0.95 * 1 - 0.42 * 0 + 0.45 * x) / 
+        (1 + exp(-1.88 + 0.95 * 1 - 0.42 * 0 + 0.45 * x) + 
+           exp(-4.85 + 1.37 * 1 + 0.36 * 0 + 0.92 * x)),
+      ylim = c(0,1), xlim = c(1,4), xlab = "GPA", ylab = "Probability",
+      main = "Multinomial LogReg Model, Pared = 1, Public = 0", col = "blue", lwd = 3)
+
+# Very Likely
+curve(exp(-4.85 + 1.37 * 1 + 0.36 * 0 + 0.92 * x) / 
+        (1 + exp(-1.88 + 0.95 * 1 - 0.42 * 0 + 0.45 * x) + 
+           exp(-4.85 + 1.37 * 1 + 0.36 * 0 + 0.92 * x)), col = "red", lwd = 3,
+      add = TRUE)
+
+# Unlikely
+curve(1/(1 + exp(-1.88 + 0.95 * 1 - 0.42 * 0 + 0.45 * x) + 
+           exp(-4.85 + 1.37 * 1 + 0.36 * 0 + 0.92 * x)), col = "green", lwd = 3,
+      add = TRUE)
+
+legend("topleft", legend = c("Somewhat Likely", "Very Likely", "Unlikely"),
+       pch = c(16,16,16), col = c("blue", "red", "green"))
+
+
+# Pared = 0, Public = 1
+# Somewhat likely:
+curve(exp(-1.88 + 0.95 * 0 - 0.42 * 1 + 0.45 * x) / 
+        (1 + exp(-1.88 + 0.95 * 0 - 0.42 * 1 + 0.45 * x) + 
+           exp(-4.85 + 1.37 * 0 + 0.36 * 1 + 0.92 * x)),
+      ylim = c(0,1), xlim = c(1,4), xlab = "GPA", ylab = "Probability",
+      main = "Multinomial LogReg Model, Pared = 0, Public = 1", col = "blue", lwd = 3)
+
+# Very Likely
+curve(exp(-4.85 + 1.37 * 0 + 0.36 * 1 + 0.92 * x) / 
+        (1 + exp(-1.88 + 0.95 * 0 - 0.42 * 1 + 0.45 * x) + 
+           exp(-4.85 + 1.37 * 0 + 0.36 * 1 + 0.92 * x)), col = "red", lwd = 3,
+      add = TRUE)
+
+# Unlikely
+curve(1/(1 + exp(-1.88 + 0.95 * 0 - 0.42 * 1 + 0.45 * x) + 
+           exp(-4.85 + 1.37 * 0 + 0.36 * 1 + 0.92 * x)), col = "green", lwd = 3,
+      add = TRUE)
+
+legend("topleft", legend = c("Somewhat Likely", "Very Likely", "Unlikely"),
+       pch = c(16,16,16), col = c("blue", "red", "green"))
+
+
+
+
+# Pared = 1, Public = 1
+# Somewhat likely:
+curve(exp(-1.88 + 0.95 * 1 - 0.42 * 1 + 0.45 * x) / 
+        (1 + exp(-1.88 + 0.95 * 1 - 0.42 * 1 + 0.45 * x) + 
+           exp(-4.85 + 1.37 * 1 + 0.36 * 1 + 0.92 * x)),
+      ylim = c(0,1), xlim = c(1,4), xlab = "GPA", ylab = "Probability",
+      main = "Multinomial LogReg Model, Pared = 1, Public = 1", col = "blue", lwd = 3,)
+
+# Very Likely
+curve(exp(-4.85 + 1.37 * 1 + 0.36 * 1 + 0.92 * x) / 
+        (1 + exp(-1.88 + 0.95 * 1 - 0.42 * 1 + 0.45 * x) + 
+           exp(-4.85 + 1.37 * 1 + 0.36 * 1 + 0.92 * x)), col = "red", lwd = 3,
+      add = TRUE)
+
+# Unlikely
+curve(1/(1 + exp(-1.88 + 0.95 * 1 - 0.42 * 1 + 0.45 * x) + 
+           exp(-4.85 + 1.37 * 1 + 0.36 * 1 + 0.92 * x)), col = "green", lwd = 3,
+      add = TRUE)
+
+legend("topleft", legend = c("Somewhat Likely", "Very Likely", "Unlikely"),
+       pch = c(16,16,16), col = c("blue", "red", "green"))
+
+```
+
+&nbsp;
+
+9.  Generate the confusion matrix.
+```{r, fig.width=8, fig.height=8}
+# To generate confusion matrix we need to predict some data, so let's 
+# predict the training data.
+
+pred <- predict(mod, newdata = dat, type = "probs")
+pred_class <- predict(mod, dat)
+
+conf <- table(dat$apply, pred_class)
+rownames(conf) = c("Obs Unlikely", "Obs Somewhat Likely", "Obs Very Likly")
+colnames(conf) = c("Pred Unlikely", "Pred Somewhat Likely", "Pred Very Likely")
+conf
+
+
+
+```
+
+&nbsp;
+
+10.  Calculate the misclassification rate.
+```{r, fig.width=8, fig.height=8}
+
+miss <- (((conf[2] + conf[3]) + (conf[4] + conf[6]) + (conf[7] + conf[8])) / nrow(dat)) * 100
+
+paste("The misclassification rate is: ", miss, "%")
+```
+
+&nbsp;
+
+11.  Postulate the proportional odds model.
+
+Pr(Unlikely) = 1 - Pr(Somewhat Likely)
+
+Pr(Somewhat Likely) = (1 / (1 + e^(alpha1 - (Beta1 * pared + Beta2 * public + Beta3 * gpa )))) 
+                      - Pr(Very Likely)
+
+Pr(Very Likely) = 1 / (1 + e^(alpha2 - (Beta1 * pared + Beta2 * public + Beta3 * gpa )))
+
+&nbsp;
+
+12.  Fit the model.
+```{r, fig.width=8, fig.height=8}
+odds_mod <- polr(apply ~., data = dat, Hess = TRUE)
+
+summary(odds_mod)
+
+```
+
+&nbsp;
+
+13.  Comment on the coefficients.
+```{r, fig.width=8, fig.height=8}
+# We can calculate p-vals for each estimate to determine which are significant.
+# |estimate / std err| > 1.96  == significant 
+
+coefs <- coef(summary(odds_mod))
+signif <- abs(coefs[, "Value"] / coefs[, "Std. Error"]) > 1.96
+signif
+
+# Significant Coefficients:
+# Pared: 1.05
+# GPA: 0.62
+# Intercept (unlikely | somewhat likely): 2.20
+# Intercept (somewhat likely | very likely): 4.30
+
+
+# Insignificant Coefficients:
+# Public: -0.06
+
+```
+
+&nbsp;
+
+14.  Check the goodness-of-fit.
+```{r, fig.width=8, fig.height=8}
+# To calculate the goodness of fit we need the residual deviance and degrees
+# of freedom.
+# Residual deviance (output by polr): 717.025 
+# 400 students, 3 choices but 1 choice will be obtained by subtraction
+# We use 5 parameters (pared, gpa, public, 2 intercepts) to fit this model, 
+# so Degrees of freedom can be calculated as shown below.
+dof <- 400 * 2 - 5
+
+# Calculate p-val for fit, pchisq(residual dev, deg of free, lower.tail = F)
+pval <- pchisq(717.025, dof, lower.tail = FALSE)
+pval
+# The calculated p-value is 0.978, meaning this model is an excellent fit!
+```
+
+&nbsp;
+
+15.  Present the model graphically.
+```{r, fig.width=8, fig.height=8}
+# 4 separate graphs, 1 for each combo of pared and public
+# GPA will run along x-axis
+
+# General formula:
+# Unlikely = 1 - (P(sl))
+
+
+# P(sl) = (1 / (1 + e^(a1 - (B1 * pared + B2 * public + gpa * x )))) - P(vl)
+
+
+# P(vl) = 1 / (1 + e^(a2 - (B1 * pared + B2 * public + gpa * x )))
+
+
+# Pared = 0, Public = 0
+# Unlikely:
+curve( 1 - 
+      (1 /(1 + exp((2.20 - (1.05 * 0 - 0.06 * 0 + 0.62 * x))))) - 
+          (1 /(1 + exp((4.30 - (1.05 * 0 - 0.06 * 0 + 0.62 * x))))),
+       ylim = c(0,1), xlim = c(1,4), xlab = "GPA", ylab = "Probability",
+        main = "Proportional Odds Regression Model, Pared = 0, Public = 0", col = "blue", lwd = 3)
+
+
+# Somewhat Likely
+curve( (1 /(1 + exp(2.20 - (1.05 * 0 - 0.06 * 0 + 0.62 * x)))) - 
+          (1 /(1 + exp((4.30 - (1.05 * 0 - 0.06 * 0 + 0.62 * x))))), 
+          col = "red", lwd = 3, add = TRUE)
+
+# Very likely
+curve(1 / (1 + exp(4.30 - (1.05 * 0 - 0.06 * 0 + 0.62 * x))),
+      col = "green", lwd = 3, add = TRUE)
+
+legend("topleft", legend = c("Unlikely", "Somewhat Likely", "Very Likely"),
+       pch = c(16,16,16), col = c("blue", "red", "green"))
+
+
+# Pared = 1, Public = 0
+# Unlikely
+curve( 1 - 
+      (1 /(1 + exp((2.20 - (1.05 * 1 - 0.06 * 0 + 0.62 * x))))) - 
+          (1 /(1 + exp((4.30 - (1.05 * 1 - 0.06 * 0 + 0.62 * x))))),
+       ylim = c(0,1), xlim = c(1,4), xlab = "GPA", ylab = "Probability",
+        main = "Proportional Odds Regression Model, Pared = 1, Public = 0", col = "blue", lwd = 3)
+
+
+# Somewhat Likely
+curve( (1 /(1 + exp(2.20 - (1.05 * 1 - 0.06 * 0 + 0.62 * x)))) - 
+          (1 /(1 + exp((4.30 - (1.05 * 1 - 0.06 * 0 + 0.62 * x))))), 
+          col = "red", lwd = 3, add = TRUE)
+
+# Very likely
+curve(1 / (1 + exp(4.30 - (1.05 * 1 - 0.06 * 0 + 0.62 * x))),
+      col = "green", lwd = 3, add = TRUE)
+
+legend("topleft", legend = c("Unlikely", "Somewhat Likely", "Very Likely"),
+       pch = c(16,16,16), col = c("blue", "red", "green"))
+
+
+
+# Pared = 0, Public = 1
+#Unlikely
+curve( 1 - 
+      (1 /(1 + exp((2.20 - (1.05 * 0 - 0.06 * 1 + 0.62 * x))))) - 
+          (1 /(1 + exp((4.30 - (1.05 * 0 - 0.06 * 1 + 0.62 * x))))),
+       ylim = c(0,1), xlim = c(1,4), xlab = "GPA", ylab = "Probability",
+        main = "Proportional Odds Regression Model, Pared = 0, Public = 1", col = "blue", lwd = 3)
+
+
+# Somewhat Likely
+curve( (1 /(1 + exp(2.20 - (1.05 * 0 - 0.06 * 1 + 0.62 * x)))) - 
+          (1 /(1 + exp((4.30 - (1.05 * 0 - 0.06 * 1 + 0.62 * x))))), 
+          col = "red", lwd = 3, add = TRUE)
+
+# Very likely
+curve(1 / (1 + exp(4.30 - (1.05 * 0 - 0.06 * 1 + 0.62 * x))),
+      col = "green", lwd = 3, add = TRUE)
+
+legend("topleft", legend = c("Unlikely", "Somewhat Likely", "Very Likely"),
+       pch = c(16,16,16), col = c("blue", "red", "green"))
+
+
+
+# Pared = 1, Public = 1
+# Unlikely
+curve( 1 - 
+      (1 /(1 + exp((2.20 - (1.05 * 1 - 0.06 * 1 + 0.62 * x))))) - 
+          (1 /(1 + exp((4.30 - (1.05 * 1 - 0.06 * 1 + 0.62 * x))))),
+       ylim = c(0,1), xlim = c(1,4), xlab = "GPA", ylab = "Probability",
+        main = "Proportional Odds Regression Model, Pared = 1, Public = 1", col = "blue", lwd = 3)
+
+
+# Somewhat Likely
+curve( (1 /(1 + exp(2.20 - (1.05 * 1 - 0.06 * 1 + 0.62 * x)))) - 
+          (1 /(1 + exp((4.30 - (1.05 * 1 - 0.06 * 1 + 0.62 * x))))), 
+          col = "red", lwd = 3, add = TRUE)
+
+# Very likely
+curve(1 / (1 + exp(4.30 - (1.05 * 1 - 0.06 * 1 + 0.62 * x))),
+      col = "green", lwd = 3, add = TRUE)
+
+legend("topleft", legend = c("Unlikely", "Somewhat Likely", "Very Likely"),
+       pch = c(16,16,16), col = c("blue", "red", "green"))
+
+```
+
+&nbsp;
+
+16.  Obtain the confusion matrix.
+```{r, fig.width=8, fig.height=8}
+# To generate confusion matrix we need to predict some data, so let's 
+# predict the training data.
+
+pred <- predict(odds_mod, newdata = dat, type = "probs")
+pred_class <- predict(odds_mod, dat)
+
+conf <- table(dat$apply, pred_class)
+rownames(conf) = c("Obs Unlikely", "Obs Somewhat Likely", "Obs Very Likly")
+colnames(conf) = c("Pred Unlikely", "Pred Somewhat Likely", "Pred Very Likely")
+conf
+
+```
+
+&nbsp;
+
+17.  Calculate the missclassification rate.
+```{r, fig.width=8, fig.height=8}
+miss <- (((conf[2] + conf[3]) + (conf[4] + conf[6]) + (conf[7] + conf[8])) / nrow(dat)) * 100
+
+paste("The misclassification rate is: ", miss, "%")
+```
+
+&nbsp;
+18.  Compare the models.  
+A p-value of 0.978 was calculated for both the multinomial logistic regression
+(mlr) model and the proportional odds (po) model.  This indicates that both
+models have very good goodness of fits.  The mlr model has a misclassfication
+rate of 41.75% compared to the po model's 42.25% misclassification rate.
+However, both of these misclassification values were calculated by using the 
+same data that was used to train the models for test data, so how well
+these models would do on true test data is unknown.  Based on the 
+misclassification rate it would seem the mlr is a better model, however
+simplicity is usually better and the po model uses only 5 parameters 
+whereas the mlr model uses 8.  So a small tradeoff could be made, accepting a
+slightly higher misclassification rate for a model with 3 less parameters if
+one were to select the proportional odds model.

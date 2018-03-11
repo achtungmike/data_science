@@ -1,0 +1,388 @@
+---
+title: "Project 1 -- *n*-fold cross-validation"
+author: "Mike Lape"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+This assignment builds upon the R/RStudio class and expands the n-fold cross-validation example.
+
+1. for the assignment use the second dataset her2_lumA.txt.
+2. compute cross-validation estimates of accuracies for first 50 genes vs. PAM50 genes vs. all genes for both *3*- and *10*-fold cross-validation (3x2 table).
+3. create a R markdown document to report your result in a table format.
+4. comment on statistical significance of differences for different gene selection and n-fold cross-validation.
+5. for up to 5 extra points replace current classifier with a logistic regression-based classifier and compare result with the simple centroid based.
+
+The assignment is due date at the end of the spring break -- March 18, 2018 midnight.
+
+The submission should be zip compressed file named "project1-[*your last name*].zip" which includes project1.Rmd and any supporting R files. The zip file should be uploaded canopy. The assignment entry in Canopy will be created shortly.
+
+# Load necessary libraries
+```{r}
+library(readr)
+library(knitr)
+library(ggplot2)
+
+```
+
+# Load the Gene sets
+```{r load_gene_sets, warning=FALSE, message=FALSE}
+# Code re-used from in class example
+# provided by Dr. Michal Kouril, CCHMC
+
+# Set variables with parameter values
+file <- "her2_lumA.txt"   # this is the file we will be reading from
+
+# Load our gene sets:
+# First 50 genes listed in her2_lumA.txt 
+first50 = c('ARHGEF10L','HIF3A','RNF17','RNF10','RNF11','RNF13','GTF2IP1',
+            'REM1','MTVR2','RTN4RL2','C16orf13','C16orf11','FGFR1OP2','TSKS',
+            'ATRX','PMM2','ASS1','NCBP1','ZNF709','ZNF708','RBM14','NCBP2',
+            'DISC1','CAMK1','RPL37','SPR','ZNF700','ZNF707','CAMK4','ZNF704',
+            'LOC339240','GOLGA6B','RNF115','RNF112','ZC3H14','SPN','HMGCLL1',
+            'NACAP1','LRRTM1','GRIN1','RBMY1A3P','DHX8','DHX9','LOC441204',
+            'TCOF1','LRRTM3','NUP98','XPC','SLC12A2','GRINA')
+
+
+# Pam50 genes provided in file PAM50.txt and force into char vector
+pam = as.vector(as.matrix(read_tsv(file = 'PAM50.txt', col_names = F)))
+
+```
+
+# Read the input data and setup internal data structs
+```{r import_exp_data,warning=FALSE, message=FALSE}
+
+# Pull in header
+header <- scan(file, nlines = 1, what = character())
+
+# read the entire file skipping first two lines (headers)
+data <- read.table(file, skip = 2, header = FALSE, sep = "\t", quote = "", check.names=FALSE)
+
+# set the column names to the header and rows to gene names
+names(data) <- header
+rownames(data) <- data$id
+
+
+# read the second header line -- it contains the type of cancer
+sub <- scan(file, skip = 1, nlines = 1, what = character())
+
+```
+
+# Slice up the data based on gene sets
+```{r slice_data, warning=FALSE, message=FALSE}
+# Her2: 47 vars
+# LumA: 201 vars
+
+
+# First 50 genes
+lum_50 <- data[data$id %in% first50, sub == 'LumA']
+her_50 <- data[data$id %in% first50, sub == 'Her2']
+
+# All genes
+lum_all <- data[,sub == 'LumA']
+her_all <- data[,sub == 'Her2']
+
+# PAM50 genes
+lum_pam <- data[data$id %in% pam, sub == 'LumA']
+her_pam <- data[data$id %in% pam, sub == 'Her2']
+
+
+```
+
+
+# Put all cross-validation work in a function that we can call
+# on our different datasets for different fold numbers
+```{r cross_validation_function, warning=FALSE, message=FALSE}
+
+cv <- function(lum_dat, her_dat, nfolds)
+{
+  
+  FOLD = nfolds
+  
+  # Split data into folds
+  lum_groups <- split(sample(colnames(lum_dat)), 1+(seq_along(colnames(lum_dat)) %% FOLD))
+  her_groups <- split(sample(colnames(her_dat)), 1+(seq_along(colnames(her_dat)) %% FOLD))
+
+  
+  # Create array for results
+  
+  res <- array()
+  
+
+  for (it in 1:FOLD) {
+      
+      # create test set for each cancer type
+      # -- choose only columns (cancer samples) assigned to a selected group (test_group) 
+      lum_test <- lum_dat[,colnames(lum_dat) %in% unlist(lum_groups[it])]
+      her_test <- her_dat[,colnames(her_dat) %in% unlist(her_groups[it])]
+      
+      # create training set for each cancer type
+      # -- choose only columns (cancer samples) NOT assigned to a selected group (test_group) 
+      lum_train <- lum_dat[,!(colnames(lum_dat) %in% unlist(lum_groups[it]))]
+      her_train <- her_dat[,!(colnames(her_dat) %in% unlist(her_groups[it]))]
+      
+      
+      # THIS IS THE CLASSIFIER
+      
+      # create a centroid for training set A and B
+      # --- rowMeans computes average per row and returns a vector of averages
+      cent_lum <- rowMeans(lum_train)
+      cent_her <- rowMeans(her_train)
+      
+      # count the number of misclassified cancer samples
+      # --- sapply() applies given function to each column (each test cancer sample)
+      # --- sqrt(sum((x-centroidA)^2)) -- computes a distance from the centroidA i.e.
+      # -----        (x-centroidA)^2 -- computes a square of distance for each gene
+      # -----    sum(...) -- sums up all distances
+      # ----- sqrt( ... ) -- takes a square root of distance
+      lum_miss <- sum(sapply(lum_test, 
+                  function(x) { sqrt(sum((x-cent_lum)^2))-sqrt(sum((x-cent_her)^2))>0 }))
+      her_miss <- sum(sapply(her_test,
+                  function(x) { sqrt(sum((x-cent_lum)^2))-sqrt(sum((x-cent_her)^2))<0 }))
+      
+      # END OF THE CLASSIFIER
+      
+      # save to the result array so we can average it across all test groups
+      res[it] <- (lum_miss + her_miss) / (ncol(lum_test) + ncol(her_test))
+  }
+    
+  # calculate a mean and standard deviation
+  mu = mean(res)
+  sig = sd(res)
+
+return(c(mu, sig))
+
+}
+
+```
+
+
+
+
+```{r log_reg,warning=FALSE, message=FALSE}
+# Cannot do all gene set bc it is too much for logistic regression at least in this instance.
+cv_log <- function(lum_dat, her_dat, nfolds)
+{
+  
+  #LumA will be 0
+  #Her2 will be 1
+  
+  
+  FOLD = nfolds
+  
+  # transpose dataframes and add labels 
+  lum_labs <- rownames(lum_dat)
+  lum_dat <- sapply(lum_dat, as.numeric)
+  rownames(lum_dat) <- lum_labs
+  lum_dat <- data.frame(t(lum_dat))
+  lum_dat$call <- 0
+  lum_dat$sample <- rownames(lum_dat)
+  
+  her_labs <- rownames(her_dat)
+  her_dat <- sapply(her_dat, as.numeric)
+  rownames(her_dat) <- her_labs
+  her_dat <- data.frame(t(her_dat))
+  her_dat$call <- 1
+  her_dat$sample <- rownames(her_dat)
+  
+  # Merge into one df.
+  combo <- merge.data.frame(lum_dat, her_dat, all = TRUE)
+  rownames(combo) <- combo$sample
+  combo$sample <- NULL
+  combo$call <- as.factor(combo$call)
+  
+ 
+  
+  
+  # Create array for results
+  res <- array()
+  
+  groups <- split(sample(rownames(combo)), 1+(seq_along(rownames(combo)) %% FOLD))
+  
+  for (it in 1:FOLD) {
+    
+    # create test set for each cancer type
+    # -- choose only columns (cancer samples) assigned to a selected group (test_group) 
+    test <- combo[rownames(combo) %in% unlist(groups[it]),]
+    
+    # create training set for each cancer type
+    # -- choose only columns (cancer samples) NOT assigned to a selected group (test_group) 
+    train <- combo[!(rownames(combo) %in% unlist(groups[it])),]
+  
+
+    mod <- glm(call ~., data = train, family = binomial, control = list(maxit = 1000))
+    
+    preds <- predict(mod, newdata = test, type = "response")
+    
+    pred_sub <- ifelse(preds >= 0.5, 1, 0)
+    
+    mat <- table(test$call, pred_sub)
+    rownames(mat) <- c("Obs LumA", "Obs Her2")
+    colnames(mat) <- c("Pred LumA", "Pred Her2")
+    
+    mat
+    # save to the result array so we can average it across all test groups
+    res[it] <- (mat[2] + mat[3]) / (mat[1] + mat[2] + mat[3] + mat[4])
+  }
+  
+  # calculate a mean and standard deviation
+  mu = mean(res)
+  sig = sd(res)
+  
+  return(c(mu, sig))
+  
+}
+
+
+```
+
+
+# Run our CV for all our different params (centroid and log reg), and put together a table of results
+```{r do_cv, warning=FALSE, message=FALSE}
+
+# Use b_dat and lr_dat to assemble data for boxplots
+b_dat = data.frame("Method" = character() , "Mean" = integer(), "min" = integer(), "max" = integer(), "group" = integer(), stringsAsFactors=FALSE)
+lr_dat = data.frame("Method" = character() , "Mean" = integer(), "min" = integer(), "max" = integer(), "group" = integer(),  stringsAsFactors=FALSE)
+
+# Prep output dataframe
+rows = c('3-fold', '5-fold', '10-fold')
+genes = c('first50', 'PAM50', 'All')
+
+# Centroid df
+cent_res = data.frame(matrix(ncol = 3, nrow = 3))
+colnames(cent_res) <- genes
+rownames(cent_res) <- rows
+
+#Log Res df
+lr_res = data.frame(matrix(ncol = 3, nrow = 3))
+colnames(lr_res) <- genes
+rownames(lr_res) <- rows
+
+
+## CENTROID RUNS
+
+# Loop to change num of folds and store output in result df
+for (fold in c(3,5,10))
+{
+  curr_fold = (paste(fold,'-fold', sep = ""))
+  
+  # first50
+  out = cv(lum_50, her_50, fold)
+  
+  cent_res[curr_fold, 'first50'] <- paste(round((out[1] * 100), digits = 2), 
+                        "\u00b1", round((out[2]*100), digits = 2))
+  
+  # Pull together data for plotting
+  mean = round((out[1] * 100), digits = 2)
+  sd = round((out[2]*100), digits = 2)
+  min = mean - sd
+  max = mean + sd
+  tmp = list((paste('First50_', fold,'-fold', sep = "")), mean,min, max , 0)
+  b_dat[nrow(b_dat) + 1, ] <- tmp
+  
+  
+  # PAM50
+  out = cv(lum_pam, her_pam, fold)
+  cent_res[curr_fold, 'PAM50'] <- paste(round((out[1] * 100), digits = 2),
+                          "\u00b1", round((out[2]*100), digits = 2))
+  # Plot data
+  mean = round((out[1] * 100), digits = 2)
+  sd = round((out[2]*100), digits = 2)
+  min = mean - sd
+  max = mean + sd
+  tmp = list((paste('PAM50_', fold,'-fold', sep = "")), mean,min, max, 1)
+  b_dat[nrow(b_dat) + 1, ] <- tmp
+  
+  # All genes
+  out = cv(lum_all, her_all, fold)
+  cent_res[curr_fold, 'All'] <- paste(round((out[1] * 100), digits = 2), 
+                          "\u00b1", round((out[2]*100), digits = 2))
+  
+  # Plot data
+  mean = round((out[1] * 100), digits = 2)
+  sd = round((out[2]*100), digits = 2)
+  min = mean - sd
+  max = mean + sd
+  tmp = list((paste('AllGenes_', fold,'-fold', sep = "")), mean, min, max, 2)
+  b_dat[nrow(b_dat) + 1, ] <- tmp
+}
+
+## Logistic Regression RUNS
+
+# Loop to change num of folds and store output in result df
+for (fold in c(3,5,10))
+{
+  curr_fold = (paste(fold,'-fold', sep = ""))
+  
+  # first50
+  out = cv_log(lum_50, her_50, fold)
+  lr_res[curr_fold, 'first50'] <- paste(round((out[1] * 100), digits = 2), 
+                      "\u00b1", round((out[2]*100), digits = 2))
+  
+  # Plot data
+  mean = round((out[1] * 100), digits = 2)
+  sd = round((out[2]*100), digits = 2)
+  min = mean - sd
+  max = mean + sd
+  tmp =  c((paste('first50_', fold,'-fold', sep = "")), mean, min, max, 0)
+  lr_dat[nrow(lr_dat) + 1, ] <- tmp
+  
+  # PAM50
+  out = cv_log(lum_pam, her_pam, fold)
+  lr_res[curr_fold, 'PAM50'] <- paste(round((out[1] * 100), digits = 2),
+                      "\u00b1", round((out[2]*100), digits = 2))
+  
+  # Plot data
+  mean = round((out[1] * 100), digits = 2)
+  sd = round((out[2]*100), digits = 2)
+  min = mean - sd
+  max = mean + sd
+  tmp =  c((paste('PAM50_', fold,'-fold', sep = "")), mean, min, max, 1)
+  lr_dat[nrow(lr_dat) + 1, ] <- tmp
+  
+  
+  # All genes - not running logistic regression - stack overflow error.
+  #out = cv(lum_all, her_all, fold)
+  lr_res[curr_fold, 'All'] <- "N/A"
+  
+}
+# Create boxplots
+b_dat$group <- as.factor(b_dat$group)
+p <- ggplot(b_dat) + geom_crossbar(aes(ymin = min, ymax = max, x = Method, y = Mean, fill = group))
+p <- p + theme(axis.text.x = element_text(angle = 60, hjust = 1))
+lr_dat$Mean <- as.numeric(lr_dat$Mean)
+lr_dat$min <- as.numeric(lr_dat$min)
+lr_dat$max <- as.numeric(lr_dat$max)
+lr_dat$group <- as.factor(lr_dat$group)
+lr <- ggplot(lr_dat) + geom_crossbar(aes(ymin = min, ymax = max, x = Method, y = Mean, fill = group))
+lr <- lr + theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+
+```
+
+# Centroid Classifier Results
+The boxplots are a bit different than the usual, here the mean is the center line and 1 SD above and below the mean are the top and bottom of the box.
+
+From the table and the boxplot below for the centroid classifier data, it can easily be seen that the first50 gene set has a significantly higher missclassification rate than either the PAM50 gene set or all genes.  The PAM50 and all genes results overlap to an extent that it can't be said which one is better.  It can be seen though that the 5-fold cross-validation does give a "tighter" result, indicating a smaller standard deviation over 3-fold and 10-fold for the same gene set.
+
+```{r cent_res}
+kable(cent_res, align = c('r', 'r', 'r'), caption = "Centroid Based Cross-Validation Results")
+print(p)
+
+```
+
+# Logistic Regression Classifier Results
+
+The all gene set could not be run through the logistic regression classifier due to errors assumed to be caused the very large number of features (20,237) trying to be included in the model.  In this case, the first50 gene set gives similar results as the PAM50 results, similar enough to say there is no qualitiative difference.  The first50 gene set appears to have a better missclassifcation error for logistic regression compared to that of the results for the centroid classifier.  On the other hand, the PAM50 logistic regression results tend to be worse than the centroid classifer presented above.
+
+
+```{r log_res}
+library(ggplot2)
+kable(lr_res, align = c('r', 'r', 'r'), caption = "Logistic Regression Based Cross-Validation Results")
+print(lr)
+```
+
+# Comparing Centroid and Logistic Regression Results
+After examining the results of both classifiers for the 3 different gene sets, the PAM50 and All genes sets using the centroid classifier show the best performance.  Of these two, the PAM50 gene set gives comparable performance with a much lower number of features, which makes the PAM50 gene set using the centroid classifier the best choice for this data.
