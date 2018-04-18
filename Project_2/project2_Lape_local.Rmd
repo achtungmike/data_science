@@ -1,0 +1,127 @@
+---
+title: "Project 2 - Spark Local"
+author: "Mike Lape"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(knitr.table.format = "html") 
+library(sparklyr)
+library(dplyr)
+library(knitr)
+library(simpletable)
+library(ggplot2)
+myseed = 999
+```
+
+```{r local, results='asis'}
+# Local copy looks for input file in same in working directory:
+# pam50_samples_t_w_type.csv
+
+
+# local cluster
+sc_loc <- spark_connect(master="local")
+
+# read data in as CSV
+tab_loc <- spark_read_csv(sc_loc, "pam50data_loc", "pam50_samples_t_w_type.csv")
+
+mis_tab <- data.frame(matrix(ncol = 2, nrow = 1))
+y <- c("k", "misclass")
+  colnames(mis_tab) <- y
+
+for (cents in 2:15)
+{
+  #cents = 2
+  # Running stat data for this k-means K-value
+  tp_run_tot = 0
+  fp_run_tot = 0
+  tot_run_tot = 0
+  
+  
+  # Sep Result table for each
+  sep <- data.frame(matrix(ncol = 5, nrow = 1))
+  x <- c("Cluster", "Predicted Label", "TPs", "Misses", "NAs Classified")
+  colnames(sep) <- x
+  
+  
+  # create kmeans model
+  # Setting seed for reproducibility
+  mod <- tab_loc %>% select(- SampleID, - CancerType) %>% ml_kmeans(~ ., centers = cents, seed = myseed) 
+  
+  # make prediction
+  pred <- ml_predict(mod, tab_loc, myseed)
+
+  # majority vote
+  pred <- pred %>% group_by(prediction, CancerType) %>% summarize(count=n())%>% 
+            arrange(prediction, CancerType) %>% collect()
+
+
+
+  # Summarize
+  pred$prediction <- as.factor(pred$prediction) 
+  pred <- group_by(pred, prediction)
+  tmp <- pred %>% filter(CancerType != "NA") %>% slice(which.max(count))
+
+  for (row in 1:nrow(tmp)) 
+  {
+    #row = 1
+      clus <- tmp$prediction[row]
+    type <- tmp$CancerType[row]
+    tp <- tmp$count[row]
+    fp <- sum((pred %>% filter(CancerType != "NA") %>% 
+                 filter(CancerType != tmp$CancerType[row]) %>% 
+                 filter(prediction == clus))$count)
+    unk <- (pred %>% filter(CancerType == "NA") %>% filter(prediction == clus))$count
+    
+    tp_run_tot <- tp_run_tot + tp
+    fp_run_tot <- fp_run_tot + fp
+    tot_run_tot <- tot_run_tot + tp + fp
+    sep <- rbind(sep, c(clus, type, tp, fp, unk))
+
+  
+    
+  }
+  
+  
+  sep = sep[-1,]
+  
+  #calculate misclass for this K value
+  #ppv = round(((tp_run_tot) / (tp_run_tot + fp_run_tot) * 100 ), 2)
+  #fdr = round(((fp_run_tot) / (tp_run_tot + fp_run_tot) * 100 ), 2)
+  mis = round(((fp_run_tot) / (tot_run_tot) ), 2)
+  #acc = 1 - mis
+
+  mis_tab <- rbind(mis_tab, c(cents, mis))
+
+
+  print(paste("K-Means: K = ", cents,"  "))  
+  #print(paste("PPV: ", ppv))  
+  #print(paste("FDR: ", fdr))
+  
+  print(paste("Misclassifation: ", mis))  
+  #print(paste("Accuracy: ", acc))  
+
+  tablecode(sep, tabletype = "gridtable")
+
+}
+
+
+```
+
+```{r plot}
+mis_tab <- mis_tab[-1,]
+p <- ggplot(data = mis_tab, aes(x = k, misclass)) + geom_line() +geom_point() +
+              labs(x = "K-Means Clustering K-Value", y = "Misclassfication Rate") +
+              ggtitle("K-Means Clustering of Breast Cancer Data Using Spark Locally")
+
+p
+```
+
+Comments:
+I utilized a seed to minimize variation between results across runs from my local machine and the AWS cluster when it came to running ml_kmeans.  Both local and the AWS cluster produced identical results, as one would expect from the same code.  When originally running up to a k-value of 10 the overall trend for the misclassification rate was down, and k=10 had the lowest value, so I wanted to explore if this pattern continued as K became even larger, so I re-ran the code for up to k=15.  We can see from the plot that overall as we increase the value of K, increasing the number of clusters that the misclassification rate decreases, until a value K = 10 after which the misclassification rate jumps up and then plateaus.  So, K=10 has the best misclassification rate overall, but does it represent the best selection of a value of k?  There are only 5 true labels, LumA, LumB, Normal, Basal, and HER2, so one might immediately throw out 10 as some sort of overfitting.  However, up to 25% of breast cancers change their subtype during progression [1], so these extra clusters could represent clusters that reside between two different classical subtypes, e.g. a cluster of tumors that are migrating from Luminal A to Luminal B that lay somewhere between Luminal A and Luminal B and our K-Means classified them as Luminal A, but when allowed to have more clusters than just the classical 5 (LumA, LumB, Basal, HER2, Normal) it starts to break out these transitional clusters such as this LumA-LumB cluster I am proposing.  It doesn't have a special term for them and uses LuminalA probably because they are slightly closer to LuminalA still, but the idea is that this cluster is distinct from the classic subtype of "pure" LuminalA, as this new cluster is on a path towards LuminalB.
+
+[1] Kim C, Lee J, Lee W, Kim A. Changes in intrinsic subtype of breast cancer during tumor progression in the same patient. Int J Clin Exp Pathol. 2015;8(11):15184-90. 
