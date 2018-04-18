@@ -10,6 +10,7 @@
 
 library(shiny)
 library(DT)
+library(shinyWidgets)
 
 shinyUI(fluidPage(
 
@@ -26,6 +27,13 @@ shinyUI(fluidPage(
       selectInput("id", "Identifier:", choices=c()),
       selectInput("idtype", "Identifier Type:", choices=c("GeneSymbol", "geneid")),
       selectInput("difffunction", "Differential function:", choices=c("t-test")),
+      h4("Limit input genes to L1000 Set:"),
+      switchInput("lk", onStatus = "success", offStatus = "danger"),      
+      h4("Limit signature to top 100 differentially expressed genes?"),
+      
+      switchInput("top", value = TRUE, onLabel = "Yes", onStatus = "success", 
+                  offLabel = "No", offStatus = "danger"),      
+      hr(),
       actionButton("compute", "Compute and Submit Signature")
     ),
 

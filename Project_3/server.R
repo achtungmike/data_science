@@ -11,6 +11,7 @@
 library(shiny)
 library(DT)
 library(httr)
+library(dplyr)
 
 options(shiny.maxRequestSize=30*1024^2)
 
@@ -131,11 +132,10 @@ shinyServer(function(input, output, session) {
                                             function(x) t.test(unlist(x[rownames(group1)], use.names = FALSE),
                                                                unlist(x[rownames(group2)], use.names = FALSE))$p.value))
 
-         # FIXME: fill in
-         # Add t statistic as the measure of differential expression (Value_LogDiffExp)
+         #Pulls t-statistic as measure of diff-exp
          diff_result$Value_LogDiffExp <- apply(values$gctdata$values, 1, 
                                                function(x) t.test(unlist(x[rownames(group1)], use.names = FALSE),
-                                                                  unlist(x[rownames(group2)], use.names = FALSE))$p.value)
+                                                                  unlist(x[rownames(group2)], use.names = FALSE))$statistic)
       }
     
       #
@@ -145,14 +145,28 @@ shinyServer(function(input, output, session) {
       diff_result <- data.frame(values$gctdata$probe_metadata[input$id], diff_result[,1:2])
       colnames(diff_result) <- c(output_id_column_name, "Significance_pvalue", "Value_LogDiffExp")
 
-      # FIXME: fill in
-      # choose only L1000 genes
-      # l1000genes <- ...
-      # diff_result <- ...
+  
+      # User is allowed to choose if they want to filter based upon L1000 or not (input$lk)
+      # They want to filter, if they don't we don't have to do anythign special.
+      if (input$lk == TRUE)
+      {
+        # get the list of L1000 genes
+        l_genes <- read.delim('L1000.txt')
+        l_genes <- l_genes$pr_gene_symbol
+        
+        # now filter diff_results
+        diff_result <- diff_result[diff_result[[output_id_column_name]] %in% l_genes,]
+      }
       
-      # FIXME: fill in
-      # choose top 100 most differentially expressed genes
-      # diff_result <- ...
+      # We now will select just the top 100 if that's what the user wanted.
+      # They only want top 100 (we do this by p-val)
+      if (input$top == TRUE)
+      {
+        diff_result <- top_n(diff_result, -100, Significance_pvalue)
+        
+       
+      }      
+      
       
       #
       # show signature in a table
