@@ -29,11 +29,12 @@ shinyUI(fluidPage(
       selectInput("difffunction", "Differential function:", choices=c("t-test")),
       h4("Limit input genes to L1000 Set:"),
       switchInput("lk", onStatus = "success", offStatus = "danger"),      
-      h4("Limit signature to top 100 differentially expressed genes?"),
+      selectInput("top", label = h3("No. Diff Exp Genes"), 
+                  choices = list("All" = 1, "50" = 2, 
+                                 "100" = 3, "250" = 3,
+                                 "500" = 4, "1000" = 5), 
+                  selected = 1),
       
-      switchInput("top", value = TRUE, onLabel = "Yes", onStatus = "success", 
-                  offLabel = "No", offStatus = "danger"),      
-      hr(),
       actionButton("compute", "Compute and Submit Signature")
     ),
 

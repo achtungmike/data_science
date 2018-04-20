@@ -15,6 +15,8 @@ library(dplyr)
 
 options(shiny.maxRequestSize=30*1024^2)
 
+choices = c(0,50,100,250,500,100)
+
 #
 # GCT file read function
 #
@@ -151,7 +153,8 @@ shinyServer(function(input, output, session) {
       if (input$lk == TRUE)
       {
         # get the list of L1000 genes
-        l_genes <- read.delim('L1000.txt')
+        t <- read.csv2('L1000.txt', sep = '\t')
+        l_genes <- t %>% filter(pr_is_lm == "1") %>% select(pr_gene_symbol) %>% as.vector()
         l_genes <- l_genes$pr_gene_symbol
         
         # now filter diff_results
@@ -159,12 +162,26 @@ shinyServer(function(input, output, session) {
       }
       
       # We now will select just the top 100 if that's what the user wanted.
-      # They only want top 100 (we do this by p-val)
-      if (input$top == TRUE)
+      # They only want top 100 (we do this by abs(diff_exp)
+      
+      # We want to filter
+      if (input$top != 1)
       {
-        diff_result <- top_n(diff_result, -100, Significance_pvalue)
+        # Need to translate the filter they want
+        tmp = as.integer(input$top)
+        filt = choices[tmp]
         
-       
+        # Add column for absolute Diff Exp to sort on
+        diff_result$abso = lapply(diff_result$Value_LogDiffExp, abs)
+        diff_result <- as.data.frame(lapply(diff_result, unlist))
+        
+        # Grab top 100 based on absolute
+        diff_result <- arrange(diff_result, desc(abso))
+        
+        diff_result <- head(diff_result, filt)
+        
+        # Now drop that column
+        diff_result$abso <- NULL
       }      
       
       
@@ -189,12 +206,21 @@ shinyServer(function(input, output, session) {
       l <- lapply(content(r)$status$data, function(x) unlist(x))
       ilincs_result <- data.frame(t(sapply(l,c)))
       
+      # Need to fix similarity which comes back as factor
+      # but need to convert to numeric so it can be sorted
+      # on in DataTable by user
+      ilincs_result$similarity <- as.numeric(as.character(ilincs_result$similarity))
+      
+      
       #
       # show correlation results
       #
       output$correlated_data <- DT::renderDataTable({
         datatable( ilincs_result, rownames = TRUE, caption = "Correlated signatures")
-      })
+      
+
     })
   })
 })
+  
+})  
